@@ -76,6 +76,7 @@ function App() {
       await signInWithPopup(auth, provider);
     } catch (error) {
       console.error("Login failed:", error);
+      alert("Login Failed: " + error.message);
     }
   };
 
