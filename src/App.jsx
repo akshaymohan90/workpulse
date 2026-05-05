@@ -178,7 +178,7 @@ function App() {
           <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="pulse-icon">
             <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
           </svg>
-          <h1>GDMR Work Pulse</h1>
+          <h1>Work Pulse</h1>
         </div>
       </div>
     );
@@ -196,7 +196,7 @@ function App() {
           </button>
         </div>
         <div className="report-content">
-          <h1>GDMR Work Report</h1>
+          <h1>Work Report</h1>
           <p>
             <strong>Date Range:</strong> {reportView.startDate} to {reportView.endDate}
           </p>
@@ -245,7 +245,7 @@ function App() {
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
           </svg>
-          GDMR Work Pulse
+          Work Pulse
 
           <div className="header-stats">
             {progressTasks > 0 && <span className="stat-pill">{progressTasks} In Progress</span>}
