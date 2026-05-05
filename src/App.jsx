@@ -1,4 +1,6 @@
 import { useState, useEffect } from 'react'
+import { collection, onSnapshot, addDoc, doc, updateDoc, deleteDoc } from 'firebase/firestore'
+import { db } from './firebase'
 import './App.css'
 
 const getFormattedDate = (offsetDays = 0) => {
@@ -8,43 +10,13 @@ const getFormattedDate = (offsetDays = 0) => {
 };
 
 const today = getFormattedDate(0);
-const yesterday = getFormattedDate(-1);
-
-const initialData = [
-  {
-    id: 'emp-1',
-    name: 'Alex Johnson',
-    department: 'Design',
-    tasks: [
-      { id: 't-1', title: 'Design Landing Page', status: 'progress', date: today },
-      { id: 't-2', title: 'Update Logo', status: 'done', date: yesterday },
-    ]
-  },
-  {
-    id: 'emp-2',
-    name: 'Sarah Smith',
-    department: 'Engineering',
-    tasks: [
-      { id: 't-3', title: 'Fix Login Bug', status: 'todo', date: today },
-      { id: 't-4', title: 'API Integration', status: 'progress', date: today },
-      { id: 't-5', title: 'Write Documentation', status: 'done', date: yesterday }
-    ]
-  },
-  {
-    id: 'emp-3',
-    name: 'Mike Brown',
-    department: 'Operations',
-    tasks: [
-      { id: 't-6', title: 'Database Migration', status: 'done', date: yesterday },
-      { id: 't-7', title: 'Server Maintenance', status: 'todo', date: today }
-    ]
-  }
-];
 
 function App() {
   const [showSplash, setShowSplash] = useState(true);
 
-  const [employees, setEmployees] = useState(initialData);
+  // Replaced initialData with empty array, it will be filled by Firebase
+  const [employees, setEmployees] = useState([]);
+  
   const [viewMode, setViewMode] = useState('today'); 
   
   const [addingTaskFor, setAddingTaskFor] = useState(null);
@@ -62,6 +34,7 @@ function App() {
   const [exportEmployeeId, setExportEmployeeId] = useState('all');
   const [reportView, setReportView] = useState(null);
 
+  // Splash Screen Timer
   useEffect(() => {
     const timer = setTimeout(() => {
       setShowSplash(false);
@@ -69,27 +42,49 @@ function App() {
     return () => clearTimeout(timer);
   }, []);
 
-  const handleAddEmployee = () => {
+  // Firebase Realtime Listener
+  useEffect(() => {
+    const unsubscribe = onSnapshot(collection(db, 'employees'), (snapshot) => {
+      const empData = [];
+      snapshot.forEach(doc => {
+        empData.push({ id: doc.id, ...doc.data() });
+      });
+      setEmployees(empData);
+    }, (error) => {
+      console.error("Firebase listen error:", error);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  const handleAddEmployee = async () => {
     if (!newEmployeeName.trim()) return;
-    setEmployees([...employees, {
-      id: 'emp-' + Date.now(),
-      name: newEmployeeName,
-      department: newEmployeeDept || 'General',
-      tasks: []
-    }]);
-    setIsAddingEmployee(false);
-    setNewEmployeeName('');
-    setNewEmployeeDept('');
+    try {
+      await addDoc(collection(db, 'employees'), {
+        name: newEmployeeName,
+        department: newEmployeeDept || 'General',
+        tasks: []
+      });
+      setIsAddingEmployee(false);
+      setNewEmployeeName('');
+      setNewEmployeeDept('');
+    } catch (error) {
+      console.error("Error adding employee:", error);
+    }
   };
 
   const confirmDelete = (empId) => {
     setEmployeeToDelete(empId);
   };
 
-  const executeDelete = () => {
+  const executeDelete = async () => {
     if (employeeToDelete) {
-      setEmployees(employees.filter(emp => emp.id !== employeeToDelete));
-      setEmployeeToDelete(null);
+      try {
+        await deleteDoc(doc(db, 'employees', employeeToDelete));
+        setEmployeeToDelete(null);
+      } catch (error) {
+        console.error("Error deleting employee:", error);
+      }
     }
   };
 
@@ -97,23 +92,29 @@ function App() {
     setEmployeeToDelete(null);
   };
 
-  const updateTaskStatus = (empId, taskId, newStatus) => {
-    setEmployees(employees.map(emp => {
-      if (emp.id === empId) {
-        return {
-          ...emp,
-          tasks: emp.tasks.map(task => 
-            task.id === taskId ? { ...task, status: newStatus } : task
-          )
-        };
-      }
-      return emp;
-    }));
+  const updateTaskStatus = async (empId, taskId, newStatus) => {
+    const emp = employees.find(e => e.id === empId);
+    if (!emp) return;
+    
+    const updatedTasks = emp.tasks.map(task => 
+      task.id === taskId ? { ...task, status: newStatus } : task
+    );
+    
+    try {
+      await updateDoc(doc(db, 'employees', empId), {
+        tasks: updatedTasks
+      });
+    } catch (error) {
+      console.error("Error updating task:", error);
+    }
   };
 
-  const handleAddTask = (empId) => {
+  const handleAddTask = async (empId) => {
     if (!newTaskTitle.trim()) return;
     
+    const emp = employees.find(e => e.id === empId);
+    if (!emp) return;
+
     const newTask = {
       id: 't-' + Date.now(),
       title: newTaskTitle,
@@ -121,18 +122,15 @@ function App() {
       date: today
     };
 
-    setEmployees(employees.map(emp => {
-      if (emp.id === empId) {
-        return {
-          ...emp,
-          tasks: [...emp.tasks, newTask]
-        };
-      }
-      return emp;
-    }));
-    
-    setAddingTaskFor(null);
-    setNewTaskTitle('');
+    try {
+      await updateDoc(doc(db, 'employees', empId), {
+        tasks: [...(emp.tasks || []), newTask]
+      });
+      setAddingTaskFor(null);
+      setNewTaskTitle('');
+    } catch (error) {
+      console.error("Error adding task:", error);
+    }
   };
 
   const handleGenerateReport = () => {
@@ -143,7 +141,7 @@ function App() {
     
     data = data.map(emp => ({
       ...emp,
-      tasks: emp.tasks.filter(task => task.date >= exportStartDate && task.date <= exportEndDate)
+      tasks: (emp.tasks || []).filter(task => task.date >= exportStartDate && task.date <= exportEndDate)
     }));
     
     setReportView({
@@ -206,7 +204,7 @@ function App() {
           {reportView.filteredData.map(emp => (
             <div key={emp.id} className="report-employee-section">
               <h3>{emp.name} <span>({emp.department})</span></h3>
-              {emp.tasks.length === 0 ? (
+              {(!emp.tasks || emp.tasks.length === 0) ? (
                 <p className="no-tasks">No tasks logged in this period.</p>
               ) : (
                 <ul>
@@ -230,7 +228,7 @@ function App() {
 
   const filteredEmployees = employees.map(emp => ({
     ...emp,
-    tasks: emp.tasks.filter(task => {
+    tasks: (emp.tasks || []).filter(task => {
       if (viewMode === 'today') return task.date === today;
       return task.date < today; 
     })
@@ -282,95 +280,103 @@ function App() {
       </header>
 
       <main className="board-container">
-        {filteredEmployees.map(emp => {
-          const empTotal = emp.tasks.length;
-          const empDone = emp.tasks.filter(t => t.status === 'done').length;
+        {employees.length === 0 ? (
+          <div className="empty-state" style={{margin: '2rem auto', width: '100%', maxWidth: '400px', border: 'none'}}>
+            <h3>Welcome to Work Pulse!</h3>
+            <p style={{marginBottom: '1rem'}}>Add your first employee to start tracking tasks.</p>
+            <button className="btn-save" onClick={() => setIsAddingEmployee(true)}>+ Add Employee</button>
+          </div>
+        ) : (
+          filteredEmployees.map(emp => {
+            const empTotal = emp.tasks.length;
+            const empDone = emp.tasks.filter(t => t.status === 'done').length;
 
-          return (
-            <div key={emp.id} className="employee-column">
-              <div className="employee-header">
-                <div className="employee-title-row">
-                  <div>
-                    <h2 className="employee-name">{emp.name}</h2>
-                    <div className="employee-dept">{emp.department}</div>
-                  </div>
-                  <div className="emp-actions">
-                    <span className="emp-count-pill" title={`${empDone} of ${empTotal} tasks done`}>{empDone}/{empTotal}</span>
-                    <button 
-                      className="btn-icon-delete" 
-                      onClick={() => confirmDelete(emp.id)}
-                      title="Delete Employee"
-                    >
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M3 6h18"></path>
-                        <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path>
-                        <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path>
-                      </svg>
-                    </button>
+            return (
+              <div key={emp.id} className="employee-column">
+                <div className="employee-header">
+                  <div className="employee-title-row">
+                    <div>
+                      <h2 className="employee-name">{emp.name}</h2>
+                      <div className="employee-dept">{emp.department}</div>
+                    </div>
+                    <div className="emp-actions">
+                      <span className="emp-count-pill" title={`${empDone} of ${empTotal} tasks done`}>{empDone}/{empTotal}</span>
+                      <button 
+                        className="btn-icon-delete" 
+                        onClick={() => confirmDelete(emp.id)}
+                        title="Delete Employee"
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M3 6h18"></path>
+                          <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path>
+                          <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path>
+                        </svg>
+                      </button>
+                    </div>
                   </div>
                 </div>
-              </div>
-              
-              <div className="task-list">
-                {emp.tasks.length === 0 ? (
-                  <div className="empty-state">No tasks for this view.</div>
-                ) : (
-                  emp.tasks.map(task => (
-                    <div key={task.id} className={`task-card status-${task.status}`}>
-                      <div className="task-date">{task.date}</div>
-                      <div className="task-title">{task.title}</div>
-                      
-                      <select 
-                        className={`task-status-select badge-${task.status}`}
-                        value={task.status}
-                        onChange={(e) => updateTaskStatus(emp.id, task.id, e.target.value)}
-                      >
-                        <option value="todo">To Do</option>
-                        <option value="progress">In Progress</option>
-                        <option value="done">Done</option>
-                      </select>
-                    </div>
-                  ))
-                )}
-
-                {viewMode === 'today' && (
-                  <div className="add-task-section">
-                    {addingTaskFor === emp.id ? (
-                      <div className="add-task-form">
-                        <input 
-                          type="text" 
-                          autoFocus
-                          placeholder="What are you working on?" 
-                          value={newTaskTitle}
-                          onChange={(e) => setNewTaskTitle(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') handleAddTask(emp.id);
-                            if (e.key === 'Escape') {
-                              setAddingTaskFor(null);
-                              setNewTaskTitle('');
-                            }
-                          }}
-                          className="add-task-input"
-                        />
-                        <div className="add-task-actions">
-                          <button className="btn-save" onClick={() => handleAddTask(emp.id)}>Save</button>
-                          <button className="btn-cancel" onClick={() => { setAddingTaskFor(null); setNewTaskTitle(''); }}>Cancel</button>
-                        </div>
+                
+                <div className="task-list">
+                  {emp.tasks.length === 0 ? (
+                    <div className="empty-state">No tasks for this view.</div>
+                  ) : (
+                    emp.tasks.map(task => (
+                      <div key={task.id} className={`task-card status-${task.status}`}>
+                        <div className="task-date">{task.date}</div>
+                        <div className="task-title">{task.title}</div>
+                        
+                        <select 
+                          className={`task-status-select badge-${task.status}`}
+                          value={task.status}
+                          onChange={(e) => updateTaskStatus(emp.id, task.id, e.target.value)}
+                        >
+                          <option value="todo">To Do</option>
+                          <option value="progress">In Progress</option>
+                          <option value="done">Done</option>
+                        </select>
                       </div>
-                    ) : (
-                      <button 
-                        className="btn-add-task"
-                        onClick={() => setAddingTaskFor(emp.id)}
-                      >
-                        + Add Task
-                      </button>
-                    )}
-                  </div>
-                )}
+                    ))
+                  )}
+
+                  {viewMode === 'today' && (
+                    <div className="add-task-section">
+                      {addingTaskFor === emp.id ? (
+                        <div className="add-task-form">
+                          <input 
+                            type="text" 
+                            autoFocus
+                            placeholder="What are you working on?" 
+                            value={newTaskTitle}
+                            onChange={(e) => setNewTaskTitle(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') handleAddTask(emp.id);
+                              if (e.key === 'Escape') {
+                                setAddingTaskFor(null);
+                                setNewTaskTitle('');
+                              }
+                            }}
+                            className="add-task-input"
+                          />
+                          <div className="add-task-actions">
+                            <button className="btn-save" onClick={() => handleAddTask(emp.id)}>Save</button>
+                            <button className="btn-cancel" onClick={() => { setAddingTaskFor(null); setNewTaskTitle(''); }}>Cancel</button>
+                          </div>
+                        </div>
+                      ) : (
+                        <button 
+                          className="btn-add-task"
+                          onClick={() => setAddingTaskFor(emp.id)}
+                        >
+                          + Add Task
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
-          );
-        })}
+            );
+          })
+        )}
       </main>
 
       {/* Delete Confirmation Modal */}
