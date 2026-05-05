@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { collection, onSnapshot, addDoc, doc, updateDoc, deleteDoc } from 'firebase/firestore'
-import { signInWithRedirect, signOut, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth'
+import { signInWithRedirect, getRedirectResult, signOut, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth'
 import { db, auth, provider } from './firebase'
 import './App.css'
 
@@ -52,6 +52,12 @@ function App() {
 
   // Auth Listener
   useEffect(() => {
+    // Check for redirect errors
+    getRedirectResult(auth).catch((error) => {
+      console.error("Redirect error:", error);
+      alert("Google Sign-In Error: " + error.message);
+    });
+
     const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
       setAuthChecking(false);
