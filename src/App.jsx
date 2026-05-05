@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { collection, onSnapshot, addDoc, doc, updateDoc, deleteDoc } from 'firebase/firestore'
-import { signInWithPopup, signOut, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth'
+import { signInWithRedirect, signOut, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth'
 import { db, auth, provider } from './firebase'
 import './App.css'
 
@@ -78,7 +78,7 @@ function App() {
 
   const handleGoogleLogin = async () => {
     try {
-      await signInWithPopup(auth, provider);
+      await signInWithRedirect(auth, provider);
     } catch (error) {
       console.error("Login failed:", error);
       alert("Google Login Failed: " + error.message);
